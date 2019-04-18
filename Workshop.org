@@ -1,0 +1,381 @@
+#+TITLE: Having your Raspberry Pi and Sharing it Too
+#+AUTHOR: Jim Klassen, Bob Basques
+#+DATE: <2019-04-18 Thu>
+
+* Introduction
+** Background
+   The Raspberry Pi is a credit card sized computer produced by the
+   Raspberry Pi Foundation.  We will focus on the current top of the
+   line model, the 3B+, which has a 1.2 GHz 4-core ARM v8 processor,
+   1GB of RAM, and built in WiFi, Bluetooth, HDMI, and Ethernet.
+
+   This isn't powerful by modern PC standards, but it is still plenty
+   capable of being a miniature server.
+
+   The primary operating system is Raspbian which is a Debian Linux
+   derivative, although other Linux distributions such as Arch,
+   Fedora, and Ubuntu are available.  Other operating systems such as
+   FreeBSD, RISC OS, etc. are also available.  We will stick with
+   Raspbian for this workshop because it is the most common and best
+   supported.
+
+   The important point though is after some hardware specific setup
+   steps, the Raspberry Pi is essentially a standard GNU/Linux system
+   and much of what you may know about working with GNU/Linux systems
+   will equally apply to the Pi.  The main differences compared to a
+   standard x86 desktop or server are the limited RAM, and slower
+   storage.  Also keep in mind that this is an ARM processor so x86
+   binaries will not run (although this tends not to be a problem in
+   the FOSS ecosystem were you can freely recompile programs for your
+   computer.)  In any case, you will likely find most of what you need
+   is already included in Raspbian.
+
+** Goal
+   The goal of this workshop is to learn how to setup a Raspberry Pi
+   to be a miniature server you can take with you into the field.  At
+   the end of the workshop you will have a Raspberry Pi that acts as a
+   stand alone 802.11 access point that users can connect to with
+   their normal client devices (phones, tablets, laptops, etc.).
+
+   To have a concrete example, we will install the GeoMoose 3 demo
+   (which includes Apache, MapServer, and optionally PostGIS).  The
+   intent though is to show you how you might approach building such a
+   system, with whatever FOSS stack you need for purposes, rather than
+   focus on GeoMoose.
+
+* Install Raspbian Full 2019-04 to a SD Card 
+** Download a Raspbian image
+   Raspbian is the default operating system on the Raspberry Pi.  It
+   is essentially a port of Debian to the Raspberry Pi devices with some
+   tweaks to optimize it for the Raspberry Pi hardware and to make it a
+   easier to use out of the box.
+
+   Raspbian can be downloaded at: [https://www.raspberrypi.org/downloads/raspbian/]
+
+   The Raspberry Pi foundation currently provides 3 choices of Raspbian images: 
+   - Full (includes desktop and recommended software)
+   - Desktop (includes the desktop)
+   - Lite (a command line only minimal image)  
+
+   The primary difference between the images is what software is
+   installed by default in the image.
+
+   For the purposes of this workshop, we are going with the Full image
+   because it provides the best experience for getting started with
+   the Raspberry Pi.
+
+   For an actual server deployment, the Lite image would be more
+   appropriate to avoid installing a bunch of software you don't need,
+   and then install only what you need.
+
+** Copy Image to SD Card
+   Once you have the Raspbian image downloaded, you will find a =.img=
+   file inside a =.zip= file.  This =.img= file needs to be copied
+   onto a SD card to boot the Pi.
+
+   Note this is a disk image, not a "file" so you need a special tool
+   to copy it to the SD card.  The Raspberry Pi Foundation provides
+   recommendations for doing this [[https://www.raspberrypi.org/documentation/installation/installing-images/README.md][here]].
+
+   If you are on a Linux (or Linux like) operating system you can also
+   use the =dd= command to copy the =.img= to the corresponding raw
+   device (being careful to not overwrite the wrong device on your
+   computer). (e.g.: =sudo dd if=2019-04-08-raspbian-stretch-full.img
+   of=/dev/mmcblk0 bs=1M oflag=direct=)
+
+   This image contains two partitions: A FAT32 partition with the boot
+   files, and an ext4 partition with the Linux filesystem.  Note: if
+   you are looking at the card on a non-Linux machine, you likely
+   won't be able to see the files on the ext4 partition.
+   
+** First Boot
+   On the first boot of freshly installed Raspbian on the Raspberry
+   Pi it will ask a number of questions such as what keyboard layout,
+   country (sets internationalization and WiFi channels), setup a
+   network connection, change the default password, and to install
+   updates.
+
+   To do answer these questions, it is easiest to plug the Pi into a
+   HDMI monitor and USB keyboard and mouse.
+
+** Enable SSH
+   Now is a good time to enable SSH access to your Pi.  This will allow you
+   to get a remote secure shell as well as make it easier to transfer files
+   with scp/sftp.
+
+   This can be done from the desktop by going to the Pi menu then:
+   1. Open Preferences->Raspberry Pi Configuration
+   1. Click the Interfaces Tab
+   1. Enable SSH 
+   1. Click OK
+   
+   Alternatively, from a command prompt:
+   #+BEGIN_SRC sh
+     sudo raspi-config
+   #+END_SRC
+
+   Then select =5 Interfacing Options=, then =P2 SSH=, then =YES=.
+
+** Next steps
+   At this point the Pi is basically setup and you can explore it.
+   The next step will be to install the software needed and configure
+   it as a miniature server.
+
+* Creating a Stand alone WiFi access point
+** Open a terminal
+   We need to type commands into the Pi to install and configure the
+   WiFi access point and associated software.  Since we are making
+   system level change, we need to be root (the administrative user).
+   To do this enter:
+
+   #+BEGIN_SRC sh
+   sudo su
+   #+END_SRC
+   
+   At the prompt.
+
+   The prompt should change from ending with a =$= to ending with =#=
+   to indicate you are root.
+
+
+** Install HostAPd
+
+   (Roughly following the instructions at:
+   https://frillip.com/using-your-raspberry-pi-3-as-a-wifi-access-point-with-hostapd/)
+
+   #+BEGIN_SRC sh
+     apt install hostapd
+     zcat /usr/share/doc/hostapd/examples/hostapd.conf.gz > /etc/hostapd/hostapd.conf
+   #+END_SRC
+
+   Edit /etc/hostapd/hostapd.conf and set:
+   - =ssid=<whatever you want>=
+   - =driver=nl80211=
+   - =ieee80211n=1=
+   - =wpa=2=
+   - =wpa_passphrase=<whatever you want>=
+   - =wpa_key_mgmt=WPA-PSK=
+   - =wpa_pairwise=TKIP CCMP=
+   - =rsn_pairwise=CCMP=
+
+   Test hostapd configuration:
+   #+BEGIN_SRC sh
+   hostapd -d /etc/hostapd/hostapd.conf
+   #+END_SRC
+
+   If it worked, you should see a bunch of log messages scrolling by
+   as it sets up the access point.  Type =Control-C= to exit.
+   
+   #+BEGIN_SRC
+   random: Trying to read entropy from /dev/random
+   Configuration file: /etc/hostapd/hostapd.conf
+   ctrl_interface_group=0
+   nl80211: TDLS supported
+   nl80211: Supported cipher 00-0f-ac:1
+   nl80211: Supported cipher 00-0f-ac:5
+   nl80211: Supported cipher 00-0f-ac:2
+   nl80211: Supported cipher 00-0f-ac:4
+   nl80211: Supported cipher 00-0f-ac:6
+   ...
+   wlan0: Event CHANNEL_LIST_CHANGED (29) received
+   nl80211: Drv Event 33 (NL80211_CMD_TRIGGER_SCAN) received for wlan0
+   wlan0: nl80211: Scan trigger
+   wlan0: Event SCAN_STARTED (48) received
+   Unknown event 48
+   VLAN: RTM_NEWLINK: ifi_index=3 ifname=wlan0 ifi_family=0 ifi_flags=0x11043 ([UP][RUNNING][LOWER_UP])
+   VLAN: vlan_newlink(wlan0)
+   RTM_NEWLINK: ifi_index=3 ifname=wlan0 operstate=6 linkmode=0 ifi_family=0 ifi_flags=0x11043 ([UP][RUNNING][LOWER_UP])
+   #+END_SRC
+
+   If it didn't work it there will be error/failed messages and it
+   will return you to the prompt.
+
+   #+BEGIN_SRC
+   Configuration file: /etc/hostapd/hostapd.conf
+   Line 3: invalid line 'foo'
+   ctrl_interface_group=0
+   1 errors found in configuration file '/etc/hostapd/hostapd.conf'
+   Failed to set up interface with /etc/hostapd/hostapd.conf
+   hostapd_init: free iface 0x1144cf8
+   Failed to initialize interface
+   root@raspberrypi:/home/pi# 
+   #+END_SRC
+
+** Install  DNSMASQ (DHCP server)
+   #+BEGIN_SRC sh
+     apt install dnsmasq
+   #+END_SRC
+
+   Create /etc/dnsmasq.d/wlan0.conf:
+   #+BEGIN_SRC
+   interface=wlan0
+
+   #no-resolv
+   local=/pinet/
+   address=/pinet/192.168.99.1
+   dhcp-range=192.168.99.2,192.168.99.254,1h
+   dhcp-authoritative
+   #+END_SRC
+
+** Configure the network interfaces
+   Edit /etc/network/interfaces:
+   #+BEGIN_SRC sh
+   allow-hotplug eth0
+   iface eth0 inet dhcp
+
+   allow-hotplug wlan0
+   iface wlan0 inet static
+     hostapd /etc/hostapd/hostapd.conf
+     address 192.168.99.1
+     netmask 255.255.255.0
+     network 192.168.99.0
+     broadcast 192.168.99.255
+   #+END_SRC
+
+   And start the interfaces:
+
+   #+BEGIN_SRC sh
+   ifup eth0
+   ifup wlan0
+   #+END_SRC
+
+** Give your Pi a hostname
+   Edit =/etc/hosts=
+
+   #+BEGIN_SRC
+   192.168.99.1	raspberrypi raspberrypi.pinet
+   #+END_SRC
+
+** Restart your Pi
+   
+   #+BEGIN_SRC sh
+   reboot
+   #+END_SRC
+
+** Now you should be able to connect to your Pi via WiFi
+
+* Installing GeoMoose
+** Again get a root shell
+   Open a terminal (or connect via =ssh pi@192.168.99.1= or =ssh
+   pi@raspberrypi.pinet=)
+
+   #+BEGIN_SRC sh
+   sudo su
+   #+END_SRC
+
+** Install Apache
+
+   #+BEGIN_SRC sh
+   apt install apache2
+   a2enmod cgi
+   systemctl stop apache2
+   systemctl start apache2
+   #+END_SRC
+
+** Install Mapserver (and friends)
+   #+BEGIN_SRC sh
+   apt install cgi-mapserver mapserver-bin gdal-bin proj-bin
+   #+END_SRC
+
+** Install PostGIS (if you want to)
+   #+BEGIN_SRC sh
+   apt install postgis
+   #+END_SRC
+
+** Install GeoMoose
+*** Download and unzip GeoMoose
+    #+BEGIN_SRC sh
+    mkdir -p /srv/geomoose
+    cd /srv/geomoose
+    wget https://www.geomoose.org/downloads/gm3-examples-3.3.0.zip
+    wget https://www.geomoose.org/downloads/gm3-demo-data-3.3.0.zip
+
+    unzip gm3-examples-3.3.0.zip
+    unzip gm3-demo-data-3.3.0.zip
+    #+END_SRC
+
+*** Configure GeoMoose for the install paths
+    Setup =/srv/geomoose/gm3-examples/htdocs/desktop/config.js=:    
+    #+BEGIN_SRC js
+    CONFIG = {
+        mapserver_url: '/cgi-bin/mapserv',
+        mapfile_root: '/srv/geomoose/gm3-demo-data/'
+    };
+    #+END_SRC
+
+    Add GeoMoose to the web-root:
+    #+BEGIN_SRC sh
+    ln -s /srv/geomoose/gm3-examples/htdocs /var/www/html/geomoose
+    #+END_SRC
+
+*** Test GeoMoose
+    http://192.168.99.1/geomoose/desktop/
+
+    or
+    
+    http://raspberrypi.pinet/geomoose/desktop/
+
+* Final Touches
+** Shutdown CGI Script
+   When running the Raspberry Pi headless, you can usually get by just
+   unplugging the power when it is time to turn it off as long as it
+   wasn't busy doing something at the time.  However, it is safer to 
+   tell the OS to do a proper shutdown.
+
+   Shutdown-cgi is a simple C program that can be called from Apache
+   as a CGI script and executes the "halt -p" command to shutdown the
+   Pi.  After running this command, you will see the green light next
+   to the USB power-in plug blink for awhile as the Pi gets ready to
+   shutdown.  The green light will go out after it is done and it is
+   safe to remove power.
+
+   Note: shutdown-cgi is a C program instead of a shell (or other)
+   script because it needs to be installed set-UID so it can run as
+   root and have permissions to execute "halt".  Scripts don't honor
+   the set-uid bit.
+
+   To install shutdown-cgi run =sudo make install= from the
+   shutdown-cgi directory.
+
+   Then you can shutdown your Pi by going to the following URL:
+
+   [http://192.168.99.1/cgi-bin/shutdown]
+
+   or
+
+   [http://raspberrypi.pinet/cgi-bin/shutdown]
+
+   while connected to the Pi's WiFi network.
+
+** Install a Firewall
+   This workshop is intended for small, trusted WiFi networks so a
+   firewall isn't strictly necessary.  However, security in layers is
+   a good thing, so you may want to install a firewall on the Pi to
+   limit unexpected connections.  A relatively easy one to configure
+   that is included in Raspbian is =ufw=.
+
+   It can be installed with:
+   #+BEGIN_SRC sh
+   sudo apt install ufw
+   #+END_SRC
+
+   An example of simple configuration:
+   #+BEGIN_SRC sh
+   ufw allow "DNS"
+   ufw allow 67
+   ufw allow "SSH"
+   ufw allow "WWW Full"
+   ufw enable
+   #+END_SRC
+
+   The first two lines allow DNS and DHCP queries from WiFi clients to
+   the Pi.  The next two lines allow SSH and HTTP access.  Then the
+   final line enables the firewall and sets it to be enabled at boot.
+
+   Of course, the rules you need will vary depending on your needs.
+   You could also tighten up access to only specific IP ranges, etc.
+
+   If you are connected to your Pi over the network, be careful you
+   don't lock yourself out.  If you do, you will need a monitor and
+   keyboard to fix it (or to edit the SD card in a different Linux
+   computer).
